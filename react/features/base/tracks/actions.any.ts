@@ -24,6 +24,7 @@ import { updateSettings } from '../settings/actions';
 
 import {
     SET_NO_SRC_DATA_NOTIFICATION_UID,
+    SET_TRACK_OPERATIONS_PROMISE,
     TRACK_ADDED,
     TRACK_CREATE_CANCELED,
     TRACK_CREATE_ERROR,
@@ -799,6 +800,28 @@ export function setNoSrcDataNotificationUid(uid?: string) {
 }
 
 /**
+ * Sets the track operation promise.
+ *
+ * @param {Promise} audioTrackOperationsPromise - The promise for audio track operations.
+ * @param {Promise} videoTrackOperationsPromise - The promise for audio track operations.
+ * @returns {{
+ *      type: SET_TRACK_OPERATIONS_PROMISE,
+ *      audioTrackOperationsPromise: Promise<void>,
+ *      videoTrackOperationsPromise: Promise<void>
+ * }}
+ */
+export function setTrackOperationsPromise(
+        audioTrackOperationsPromise?: Promise<void>,
+        videoTrackOperationsPromise?: Promise<void>
+) {
+    return {
+        type: SET_TRACK_OPERATIONS_PROMISE,
+        audioTrackOperationsPromise,
+        videoTrackOperationsPromise
+    };
+}
+
+/**
  * Updates the last media event received for a video track.
  *
  * @param {JitsiRemoteTrack} track - JitsiTrack instance.
@@ -827,11 +850,9 @@ export function updateLastTrackVideoMediaEvent(track: any, name: string): {
  * @returns {Function}
  */
 export function toggleCamera() {
-    return async (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
-        const state = getState();
-        const tracks = state['features/base/tracks'];
-        const localVideoTrack = getLocalVideoTrack(tracks)?.jitsiTrack;
-        const currentFacingMode = localVideoTrack.getCameraFacingMode();
+    return (dispatch: IStore['dispatch'], getState: IStore['getState']) => {
+
+        const { videoTrackOperationsPromise } = getState()['features/base/track-operations'];
 
         /**
          * FIXME: Ideally, we should be dispatching {@code replaceLocalTrack} here,
@@ -840,18 +861,27 @@ export function toggleCamera() {
          * method defined in conference.js that manually takes care of updating the local
          * video as well.
          */
-        await APP.conference.useVideoStream(null);
+        const promiseToDispatch = videoTrackOperationsPromise.then(
+            () => APP.conference.useVideoStream(null).then(() => {
+                const state = getState();
+                const tracks = state['features/base/tracks'];
+                const localVideoTrack = getLocalVideoTrack(tracks)?.jitsiTrack;
+                const currentFacingMode = localVideoTrack.getCameraFacingMode();
 
-        const targetFacingMode = currentFacingMode === CAMERA_FACING_MODE.USER
-            ? CAMERA_FACING_MODE.ENVIRONMENT
-            : CAMERA_FACING_MODE.USER;
+                const targetFacingMode = currentFacingMode === CAMERA_FACING_MODE.USER
+                    ? CAMERA_FACING_MODE.ENVIRONMENT
+                    : CAMERA_FACING_MODE.USER;
 
-        // Update the flipX value so the environment facing camera is not flipped, before the new track is created.
-        dispatch(updateSettings({ localFlipX: targetFacingMode === CAMERA_FACING_MODE.USER }));
+                // Update the flipX value so the environment facing camera is not flipped, before the new track is
+                // created.
+                dispatch(updateSettings({ localFlipX: targetFacingMode === CAMERA_FACING_MODE.USER }));
 
-        const newVideoTrack = await createLocalTrack('video', null, null, { facingMode: targetFacingMode });
+                return createLocalTrack('video', null, null, { facingMode: targetFacingMode });
+            })
+            .then((newVideoTrack: any) => APP.conference.useVideoStream(newVideoTrack)));
 
-        // FIXME: See above.
-        await APP.conference.useVideoStream(newVideoTrack);
+        dispatch(setTrackOperationsPromise(undefined, videoTrackOperationsPromise));
+
+        return promiseToDispatch;
     };
 }
