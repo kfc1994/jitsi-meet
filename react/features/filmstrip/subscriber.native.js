@@ -1,5 +1,6 @@
 // @flow
 
+import { getCurrentConference } from '../base/conference/functions';
 import { StateListenerRegistry } from '../base/redux';
 import { shouldDisplayTileView } from '../video-layout';
 
@@ -35,9 +36,12 @@ StateListenerRegistry.register(
  * Listens for changes in the current conference and clears remote participants from this feature.
  */
 StateListenerRegistry.register(
-    state => state['features/base/conference'].conference,
+    state => getCurrentConference(state),
     (conference, { dispatch }, previousConference) => {
         if (conference !== previousConference) {
+            console.log('XXXXX');
+            console.log(typeof conference);
+            console.log(typeof previousConference);
             dispatch(setRemoteParticipants([]));
         }
     });
